@@ -1,7 +1,7 @@
 /**
  * psi4 (performance): compares performance against baseline within threshold delta.
  * Contract: `run(ctx)` -> { id, passed, severity, evidence }. Must only touch
- * `ctx.workspace.path` (the temp copy), never the original target.
+ * `ctx.cloneDir` (the temp clone), never the original target.
  * Stubbed: returns a deterministic passing result.
  */
 

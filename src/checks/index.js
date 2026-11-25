@@ -9,8 +9,10 @@ import * as psi4 from './psi4.js';
 
 /**
  * @typedef {object} CheckContext
- * @property {import('../adapters/index.js').Workspace} workspace  Isolated copy, diff already applied.
- * @property {import('../adapters/index.js').Adapter} adapter
+ * @property {string} cloneDir  Isolated clone with the diff applied; the only dir checks may touch.
+ * @property {import('../adapters/index.js').TargetAdapter} adapter
+ * @property {import('./../engine/schema.js').ApplyResult} applyResult
+ * @property {import('./../engine/schema.js').InstallResult} install
  * @property {string} diff
  * @property {object} config  Parsed config/default.json (or override).
  */
