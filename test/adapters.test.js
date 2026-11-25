@@ -19,7 +19,7 @@ test('manifestFiles lists the npm manifests', () => {
 });
 
 test('testCommand reads the test script and detects the framework', async () => {
-  assert.deepEqual(nodeNpmAdapter.testCommand(FIXTURE), { cmd: 'npm', args: ['test'], cwd: FIXTURE, framework: null });
+  assert.deepEqual(nodeNpmAdapter.testCommand(FIXTURE), { cmd: 'npm', args: ['test'], cwd: FIXTURE, framework: 'node:test' });
   const dir = await mkdtemp(join(await tmpBase(), 'p-'));
   await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' }, devDependencies: { vitest: '^1' } }));
   assert.equal(nodeNpmAdapter.testCommand(dir).framework, 'vitest');
@@ -29,6 +29,8 @@ test('testCommand reads the test script and detects the framework', async () => 
   assert.equal(nodeNpmAdapter.testCommand(dir).framework, 'mocha');
   await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'echo "Error: no test specified" && exit 1' } }));
   assert.equal(nodeNpmAdapter.testCommand(dir), null);
+  await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test test/' } }));
+  assert.equal(nodeNpmAdapter.testCommand(dir).framework, 'node:test');
 });
 
 test('prepare symlinks node_modules without a manifest change', async () => {

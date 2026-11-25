@@ -8,9 +8,13 @@
  *   detect(targetPath)        -> boolean   sync; does this adapter handle the target?
  *   prepare(cloneDir, ctx)    -> Promise<PrepareResult>
  *                                installs/links dependencies inside the clone.
- *                                ctx = { targetPath, touchesManifest, installTimeoutMs }.
+ *                                ctx = { targetPath, touchesManifest, installTimeoutMs, env, ignoreScripts }.
  *                                Must not throw for an install failure: return ok:false.
  *   testCommand(cloneDir)     -> { cmd, args, cwd, framework? } | null   sync; null = no tests
+ *   runTests(dir, opts)       -> Promise<TestRun>   runs the suite with machine-readable output.
+ *                                opts = { files?, timeoutMs, env }; `files` = changed files for
+ *                                related-test selection (runners without it run everything).
+ *                                Never throws for failing tests or timeouts.
  *   manifestFiles()           -> string[]  dependency manifest/lockfile basenames; a diff
  *                                touching any of them forces a real install.
  */
@@ -29,6 +33,20 @@ import { nodeNpmAdapter } from './node-npm.js';
  * @property {string} targetPath  Original target (read-only; symlink source).
  * @property {boolean} touchesManifest  The applied diff changed a manifest file.
  * @property {number} installTimeoutMs
+ * @property {Record<string, string>} [env]  Scrubbed environment for the install subprocess.
+ * @property {boolean} [ignoreScripts]  Pass --ignore-scripts to the install (default true,
+ *   config install.ignoreScripts). A target whose dependencies need postinstall
+ *   (native builds etc.) can set it to false; that runs the target's and its
+ *   dependencies' lifecycle scripts, so only do so for trusted targets.
+ */
+
+/**
+ * @typedef {object} TestRun
+ * @property {boolean} ran  False when there was nothing to run (no test script / no related tests).
+ * @property {Array<{id: string, file: string, status: 'pass'|'fail'|'skip'}>} tests
+ * @property {number|null} exitCode
+ * @property {number} durationMs
+ * @property {boolean} timedOut  The process tree was killed at the timeout.
  */
 
 /**
@@ -37,6 +55,7 @@ import { nodeNpmAdapter } from './node-npm.js';
  * @property {(targetPath: string) => boolean} detect
  * @property {(cloneDir: string, ctx: PrepareContext) => Promise<PrepareResult>} prepare
  * @property {(cloneDir: string) => ({cmd: string, args: string[], cwd: string, framework?: string|null})|null} testCommand
+ * @property {(dir: string, opts?: {files?: string[], timeoutMs?: number, env?: Record<string, string>}) => Promise<TestRun>} runTests
  * @property {() => string[]} manifestFiles
  */
 
