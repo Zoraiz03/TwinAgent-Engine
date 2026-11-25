@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { rmSync } from 'node:fs';
-import { cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,9 +21,10 @@ export async function tmpBase() {
  * Copy the fixture into a temp dir. Options: git (init + commit), nodeModules (fake dep).
  * @returns {Promise<string>} target path
  */
-export async function makeTarget({ git = false, nodeModules = false } = {}) {
+export async function makeTarget({ git = false, nodeModules = false, files = {} } = {}) {
   const dir = join(await tmpBase(), 'target');
   await cp(FIXTURE, dir, { recursive: true });
+  await applyFiles(dir, files);
   if (nodeModules) {
     await mkdir(join(dir, 'node_modules/dep'), { recursive: true });
     await writeFile(join(dir, 'node_modules/dep/index.js'), 'export default 1;\n');
@@ -35,6 +37,34 @@ export async function makeTarget({ git = false, nodeModules = false } = {}) {
     g('commit', '-qm', 'init');
   }
   return dir;
+}
+
+/** Write files (string) or delete them (null) under dir. */
+export async function applyFiles(dir, files) {
+  for (const [rel, content] of Object.entries(files)) {
+    const p = join(dir, rel);
+    if (content === null) await rm(p, { force: true });
+    else {
+      await mkdir(dirname(p), { recursive: true });
+      await writeFile(p, content);
+    }
+  }
+}
+
+/**
+ * Build a real unified diff: copy the target to scratch, apply `files`
+ * (string = write, null = delete), and ask git for the diff.
+ */
+export async function makeDiff(target, files) {
+  const scratch = join(await tmpBase(), 'scratch');
+  await cp(target, scratch, { recursive: true, filter: (s) => !s.split('/').includes('node_modules') && !s.endsWith('/.git') });
+  const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: scratch, encoding: 'utf8', stdio: 'pipe' });
+  g('init', '-q');
+  g('add', '-A');
+  g('commit', '-qm', 'base');
+  await applyFiles(scratch, files);
+  g('add', '-A');
+  return g('diff', '--cached', '--no-color');
 }
 
 /** sha256 over every path, file content and symlink target in a tree (skips .git). */

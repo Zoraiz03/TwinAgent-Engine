@@ -9,12 +9,29 @@ export const CHECK_IDS = /** @type {const} */ (['psi1', 'psi2', 'psi3', 'psi4'])
 export const SEVERITIES = /** @type {const} */ (['none', 'low', 'medium', 'high', 'critical']);
 export const CLASSIFICATIONS = /** @type {const} */ (['Safe', 'Revise', 'Abort']);
 
+/** One finding. `severity` is set on failing entries; entries without it are informational. */
+export const EvidenceSchema = z.object({
+  kind: z.string(),
+  detail: z.string(),
+  files: z.array(z.string()).default([]),
+  severity: z.enum(SEVERITIES).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const CheckResultSchema = z.object({
   id: z.enum(CHECK_IDS),
   passed: z.boolean(),
   severity: z.enum(SEVERITIES),
-  evidence: z.array(z.string()),
+  evidence: z.array(EvidenceSchema),
+  /** True when the check could not reach a verdict (e.g. no tests found); passed is then true. */
+  inconclusive: z.boolean().default(false),
+  durationMs: z.number().nonnegative().optional(),
 });
+
+/** Highest severity in a list (SEVERITIES is ordered low -> high). */
+export function maxSeverity(severities) {
+  return severities.reduce((a, b) => (SEVERITIES.indexOf(b) > SEVERITIES.indexOf(a) ? b : a), 'none');
+}
 
 export const ApplyResultSchema = z.object({
   applied: z.boolean(),
@@ -53,6 +70,8 @@ export const ConsequenceReportSchema = z
     applyResult: ApplyResultSchema,
     install: InstallResultSchema.optional(),
     cloneKind: z.enum(['worktree', 'copy']),
+    /** Git target had uncommitted changes, so a copy (not a worktree) was cloned. */
+    dirtyTarget: z.boolean(),
     classification: z.enum(CLASSIFICATIONS),
     timings: TimingsSchema,
     latencyMs: z.number().nonnegative(),
@@ -65,6 +84,7 @@ export const ConsequenceReportSchema = z
     }
   });
 
+/** @typedef {z.infer<typeof EvidenceSchema>} Evidence */
 /** @typedef {z.infer<typeof CheckResultSchema>} CheckResult */
 /** @typedef {z.infer<typeof ConsequenceReportSchema>} ConsequenceReport */
 /** @typedef {z.infer<typeof ApplyResultSchema>} ApplyResult */

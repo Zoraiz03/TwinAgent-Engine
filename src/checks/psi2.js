@@ -10,5 +10,11 @@
  * @returns {Promise<import('../engine/schema.js').CheckResult>}
  */
 export async function run(_ctx) {
-  return { id: 'psi2', passed: true, severity: 'none', evidence: ['stub: psi2 (security) not implemented'] };
+  return {
+    id: 'psi2',
+    passed: true,
+    severity: 'none',
+    evidence: [{ kind: 'stub', detail: 'psi2 not implemented', files: [] }],
+    inconclusive: false,
+  };
 }

@@ -105,19 +105,15 @@ test('install timeout is recorded as a failure, gives Revise, and cleans up', as
   const report = await simulate({ target, diff: MANIFEST_DIFF, tmpRoot, config: { install: { timeoutMs: 1 } } });
   assert.equal(report.install.ok, false);
   assert.match(report.install.error, /timed out/);
-  assert.equal(report.classification, 'Revise');
+  assert.equal(report.psi3.evidence.some((e) => e.kind === 'install-failed'), true);
+  assert.equal(report.classification, 'Abort'); // psi3 install failure is high severity
   assert.deepEqual(await listDir(tmpRoot), []);
   assert.equal(worktrees(target).length, 1);
 });
 
-test('clone is removed when a check or the adapter throws', async () => {
+test('clone is removed when the adapter throws', async () => {
   const target = await makeTarget({ git: true });
   const tmpRoot = await tmpBase();
-  const boom = { run: async () => { throw new Error('check boom'); } };
-  await assert.rejects(simulate({ target, diff: CLEAN_DIFF, tmpRoot, checks: { psi1: boom } }), /check boom/);
-  assert.deepEqual(await listDir(tmpRoot), []);
-  assert.equal(worktrees(target).length, 1);
-
   const adapter = { ...nodeNpmAdapter, prepare: async () => { throw new Error('prepare boom'); } };
   await assert.rejects(simulate({ target, diff: CLEAN_DIFF, tmpRoot, adapter }), /prepare boom/);
   assert.deepEqual(await listDir(tmpRoot), []);
@@ -129,4 +125,19 @@ test('classify maps failures to Revise/Abort', () => {
   assert.equal(classify([r(true, 'none')]), 'Safe');
   assert.equal(classify([r(false, 'low')]), 'Revise');
   assert.equal(classify([r(false, 'critical')]), 'Abort');
+});
+
+test('a throwing check becomes a check-error result instead of a crash', async () => {
+  const target = await makeTarget({ git: true });
+  const tmpRoot = await tmpBase();
+  const ok = (id) => ({ run: async () => ({ id, passed: true, severity: 'none', evidence: [], inconclusive: false }) });
+  const checks = { psi1: { run: async () => { throw new Error('check boom'); } }, psi2: ok('psi2'), psi3: ok('psi3'), psi4: ok('psi4') };
+  const report = await simulate({ target, diff: CLEAN_DIFF, tmpRoot, checks });
+  assert.equal(report.psi1.passed, false);
+  assert.equal(report.psi1.severity, 'high');
+  assert.equal(report.psi1.evidence[0].kind, 'check-error');
+  assert.match(report.psi1.evidence[0].detail, /check boom/);
+  assert.equal(report.classification, 'Abort');
+  assert.deepEqual(await listDir(tmpRoot), []);
+  assert.equal(worktrees(target).length, 1);
 });
