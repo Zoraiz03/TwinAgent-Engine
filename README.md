@@ -1,0 +1,10 @@
+# twinagent-engine
+
+Research implementation of **TwinAgent**, a five-layer framework that simulates an AI coding agent's proposed change on an isolated clone of a target codebase *before* committing it, and returns a **Safe / Revise / Abort** verdict. The engine forks a clone, applies the diff, runs four checks in parallel (psi1 tests, psi2 security, psi3 dependencies, psi4 performance) and aggregates a consequence report. The original target is never modified. Check logic is currently stubbed with deterministic fake results.
+
+```sh
+npm install
+npm test        # node:test smoke tests
+npm run lint
+node bin/twinagent.js simulate --target <path> --diff <file>
+```

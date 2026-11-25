@@ -1,0 +1,11 @@
+{
+  "delta": 0.15,
+  "K": 3,
+  "checks": {
+    "psi1": { "enabled": true, "timeoutMs": 120000 },
+    "psi2": { "enabled": true, "timeoutMs": 60000 },
+    "psi3": { "enabled": true, "timeoutMs": 60000 },
+    "psi4": { "enabled": true, "timeoutMs": 180000 }
+  },
+  "llm": { "provider": "anthropic", "model": "claude-sonnet-5-5" }
+}

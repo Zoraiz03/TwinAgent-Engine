@@ -1,0 +1,26 @@
+{
+  "name": "twinagent-engine",
+  "version": "0.1.0",
+  "description": "Research implementation of TwinAgent: simulate an agent's code change on an isolated clone before committing.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "twinagent": "bin/twinagent.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "ai": "^7.0.181",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0"
+  }
+}
