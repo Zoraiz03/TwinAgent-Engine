@@ -1,7 +1,9 @@
 {
   "delta": 0.15,
   "K": 3,
-  "install": { "timeoutMs": 300000 },
+  "install": { "timeoutMs": 300000, "ignoreScripts": true },
+  "env": { "allow": [] },
+  "tests": { "scope": "related", "timeoutMs": 120000 },
   "checks": {
     "psi1": { "enabled": true, "timeoutMs": 120000 },
     "psi2": { "enabled": true, "timeoutMs": 60000 },

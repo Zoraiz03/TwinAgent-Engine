@@ -1,19 +1,20 @@
 /**
  * Process helper: run a command to completion without ever rejecting on a
  * non-zero exit. Supports stdin input and a hard timeout that kills the whole
- * process group (so `npm install` children die too).
+ * process group (so `npm install` children die too). Pass `env` to replace the
+ * inherited environment (see env.js).
  */
 import { spawn } from 'node:child_process';
 
 /**
  * @param {string} cmd
  * @param {string[]} args
- * @param {{cwd?: string, input?: string, timeoutMs?: number}} [opts]
+ * @param {{cwd?: string, input?: string, timeoutMs?: number, env?: Record<string, string>}} [opts]
  * @returns {Promise<{code: number|null, stdout: string, stderr: string, timedOut: boolean}>}
  */
-export function run(cmd, args, { cwd, input, timeoutMs } = {}) {
+export function run(cmd, args, { cwd, input, timeoutMs, env } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
