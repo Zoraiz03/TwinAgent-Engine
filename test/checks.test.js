@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { checks } from '../src/checks/index.js';
 import { CheckResultSchema } from '../src/engine/schema.js';
 
-test('stub checks (psi2, psi4) return schema-valid, deterministic results', async () => {
-  for (const id of ['psi2', 'psi4']) {
+test('stub check (psi4) return schema-valid, deterministic results', async () => {
+  for (const id of ['psi4']) {
     const mod = checks[id];
     const a = await mod.run({});
     const b = await mod.run({});

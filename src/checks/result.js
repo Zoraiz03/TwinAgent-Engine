@@ -8,10 +8,10 @@ import { maxSeverity } from '../engine/schema.js';
 /**
  * @param {'psi1'|'psi2'|'psi3'|'psi4'} id
  * @param {import('../engine/schema.js').Evidence[]} evidence
- * @param {{inconclusive?: boolean, durationMs?: number}} [extra]
+ * @param {{inconclusive?: boolean, durationMs?: number, tool?: object}} [extra]
  * @returns {import('../engine/schema.js').CheckResult}
  */
-export function buildResult(id, evidence, { inconclusive = false, durationMs } = {}) {
+export function buildResult(id, evidence, { inconclusive = false, durationMs, tool } = {}) {
   const failing = evidence.filter((e) => e.severity && e.severity !== 'none');
   return {
     id,
@@ -20,5 +20,6 @@ export function buildResult(id, evidence, { inconclusive = false, durationMs } =
     evidence,
     inconclusive,
     ...(durationMs === undefined ? {} : { durationMs }),
+    ...(tool ? { tool } : {}),
   };
 }

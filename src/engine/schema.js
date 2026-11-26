@@ -15,6 +15,9 @@ export const EvidenceSchema = z.object({
   detail: z.string(),
   files: z.array(z.string()).default([]),
   severity: z.enum(SEVERITIES).optional(),
+  ruleId: z.string().optional(),
+  advisoryId: z.string().optional(),
+  cwe: z.string().optional(),
   data: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -26,6 +29,10 @@ export const CheckResultSchema = z.object({
   /** True when the check could not reach a verdict (e.g. no tests found); passed is then true. */
   inconclusive: z.boolean().default(false),
   durationMs: z.number().nonnegative().optional(),
+  /** Tool versions, for reproducible experiments (psi2: semgrep binary version, vuln provider). */
+  tool: z
+    .object({ semgrepVersion: z.string().nullable().optional(), vulnProvider: z.string().nullable().optional() })
+    .optional(),
 });
 
 /** Highest severity in a list (SEVERITIES is ordered low -> high). */

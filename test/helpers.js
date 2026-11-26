@@ -1,10 +1,14 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+/** True when a real semgrep binary is on PATH (semgrep-dependent tests skip otherwise). */
+export const hasSemgrep = spawnSync('semgrep', ['--version']).status === 0;
+export const semgrepVersionOnPath = hasSemgrep ? spawnSync('semgrep', ['--version'], { encoding: 'utf8' }).stdout.trim() : null;
 
 export const FIXTURE = new URL('./fixtures/sample-app', import.meta.url).pathname;
 

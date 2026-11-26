@@ -3,7 +3,7 @@
  * Each check exports `async run(ctx) -> { id, passed, severity, evidence }`.
  */
 import * as psi1 from './psi1-tests.js';
-import * as psi2 from './psi2.js';
+import * as psi2 from './psi2-security.js';
 import * as psi3 from './psi3-dependencies.js';
 import * as psi4 from './psi4.js';
 
