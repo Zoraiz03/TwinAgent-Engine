@@ -78,6 +78,8 @@ export class Twin {
     this.selfName = null;
     this.manifestFiles = manifestFiles;
     this.services = services;
+    /** Observed test -> module coverage (feedback: refreshed after commits). */
+    this.coverage = {};
     this._delta = null;
   }
 
@@ -415,6 +417,7 @@ export class Twin {
         selfName: this.selfName,
         manifestFiles: this.manifestFiles,
         services: this.services,
+        coverage: this.coverage,
       },
     };
   }
@@ -429,6 +432,7 @@ export class Twin {
     twin.unresolved = new Map(Object.entries(index.unresolved));
     twin.deps = new Set(index.deps);
     twin.selfName = index.selfName;
+    twin.coverage = index.coverage ?? {};
     return twin;
   }
 
