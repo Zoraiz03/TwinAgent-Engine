@@ -1,6 +1,7 @@
 {
   "delta": 0.15,
-  "K": 3,
+  "engine": { "blockingSeverity": "low" },
+  "analysisScope": "diff",
   "install": { "timeoutMs": 300000, "ignoreScripts": true },
   "env": { "allow": [] },
   "tests": { "scope": "related", "timeoutMs": 120000, "skipIsRegression": true, "tamperingDetection": true, "assertionDropSeverity": "medium", "noAffectedFallback": "full" },
@@ -19,5 +20,8 @@
     "psi3": { "enabled": true, "timeoutMs": 60000 },
     "psi4": { "enabled": true, "timeoutMs": 180000 }
   },
+  "agent": { "contextBudgetChars": 24000, "reformulateMode": "report", "decompose": false },
+  "loop": { "maxRetries": 3 },
+  "eval": { "logPath": null },
   "llm": { "provider": "anthropic", "model": "claude-sonnet-5-5" }
 }

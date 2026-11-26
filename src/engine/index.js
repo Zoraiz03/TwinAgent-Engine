@@ -20,7 +20,7 @@ import { applyDiff } from './apply.js';
 import { createClone } from './clone.js';
 import { loadTwin } from '../twin/cache.js';
 import { scrubbedEnv } from './env.js';
-import { CheckResultSchema, validateReport } from './schema.js';
+import { CheckResultSchema, SEVERITIES, validateReport } from './schema.js';
 
 const DEFAULT_CONFIG_URL = new URL('../../config/default.json', import.meta.url);
 const DEFAULT_INSTALL_TIMEOUT_MS = 300_000;
@@ -54,8 +54,10 @@ function checkError(id, reason) {
  * @param {Array<import('./schema.js').CheckResult>} results
  * @returns {'Safe'|'Revise'|'Abort'}
  */
-export function classify(results) {
-  const failed = results.filter((r) => !r.passed);
+export function classify(results, { blockingSeverity = 'low' } = {}) {
+  // failures below engine.blockingSeverity are recorded but do not block a commit
+  const rank = (s) => SEVERITIES.indexOf(s);
+  const failed = results.filter((r) => !r.passed && rank(r.severity) >= rank(blockingSeverity));
   if (failed.length === 0) return 'Safe';
   return failed.some((r) => r.severity === 'high' || r.severity === 'critical') ? 'Abort' : 'Revise';
 }
@@ -72,7 +74,19 @@ const ms = (since) => Math.round(performance.now() - since);
  * @param {Record<string, {run: (ctx: any) => Promise<any>}>} [opts.checks]  Check registry override (tests).
  * @returns {Promise<import('./schema.js').ConsequenceReport>}
  */
-export async function simulate({ target, diff, config, adapter, tmpRoot, checks = defaultChecks }) {
+export async function simulate(opts) {
+  return (await simulateWithTwin(opts)).report;
+}
+
+/**
+ * Same as simulate(), but also returns the twins: T (as used) and T' (T synced
+ * with the diff; null in plain mode or when the diff did not apply). The
+ * decision loop promotes T' after a Safe commit. Pass `twin` to simulate
+ * against a caller-maintained T instead of the per-state cache.
+ * @param {Parameters<typeof simulate>[0] & {twin?: import('../twin/twin.js').Twin}} opts
+ * @returns {Promise<{report: import('./schema.js').ConsequenceReport, twin: any, twinPrime: any}>}
+ */
+export async function simulateWithTwin({ target, diff, config, adapter, tmpRoot, checks = defaultChecks, twin: givenTwin }) {
   const start = performance.now();
   const cfg = mergeConfig(await loadConfig(), config);
   const ad = typeof adapter === 'object' ? adapter : adapter ? getAdapter(adapter) : pickAdapter(target);
@@ -88,7 +102,7 @@ export async function simulate({ target, diff, config, adapter, tmpRoot, checks 
     let twin = null;
     if (twinMode === 'twin') {
       t = performance.now();
-      ({ twin } = await loadTwin({ stateKey: clone.stateKey, dir: clone.dir, adapter: ad, config: cfg }));
+      twin = givenTwin ?? (await loadTwin({ stateKey: clone.stateKey, dir: clone.dir, adapter: ad, config: cfg })).twin;
       timings.twinBuildMs = ms(t);
     }
 
@@ -98,11 +112,12 @@ export async function simulate({ target, diff, config, adapter, tmpRoot, checks 
 
     const base = { applyResult, cloneKind: clone.kind, dirtyTarget: clone.dirty, twinMode, timings };
     if (!applyResult.applied) {
-      return validateReport({
+      const report = validateReport({
         ...base,
         classification: applyResult.rejected ? 'Abort' : 'Revise',
         latencyMs: ms(start),
       });
+      return { report, twin, twinPrime: null };
     }
 
     // T' = clone(T), synced incrementally with the files the diff changed.
@@ -160,9 +175,10 @@ export async function simulate({ target, diff, config, adapter, tmpRoot, checks 
         : checkError(ids[i], `invalid result from ${ids[i]}`);
     });
     const byId = Object.fromEntries(results.map((r) => [r.id, r]));
-    let classification = classify(results);
+    let classification = classify(results, { blockingSeverity: cfg.engine?.blockingSeverity ?? 'low' });
     if (!install.ok && classification === 'Safe') classification = 'Revise';
-    return validateReport({ ...base, ...byId, install, classification, latencyMs: ms(start) });
+    const report = validateReport({ ...base, ...byId, install, classification, latencyMs: ms(start) });
+    return { report, twin, twinPrime };
   } finally {
     await clone.dispose();
   }

@@ -14,6 +14,8 @@
  *     New advisories (id + package) fail: critical/high -> high, moderate ->
  *     medium, low -> low (only fails with security.failOnLow). Unavailable
  *     provider -> inconclusive "vuln-provider-unavailable".
+ * config analysisScope "full" scans all source files and always runs the
+ * dependency scan (ground-truth observation); default "diff" is diff-scoped.
  * Both parts run in parallel with the scrubbed environment. The result records
  * the semgrep version and provider in `tool` for reproducibility.
  */
@@ -23,6 +25,7 @@ import { join } from 'node:path';
 import { cached, withBaselineClone } from './baseline.js';
 import { parseRenames } from './diff-scan.js';
 import { buildResult } from './result.js';
+import { listSourceFiles } from '../twin/parse.js';
 import { DEFAULT_RULES, hashRules, newFindings, runSemgrep, semgrepVersion } from './semgrep.js';
 import { getProvider, ProviderUnavailableError } from './vuln-providers/index.js';
 
@@ -42,19 +45,22 @@ async function semgrepPart(ctx, sec) {
   }
   const rules = [DEFAULT_RULES, ...(sec.semgrepRules ?? [])];
   const timeoutMs = ctx.config?.checks?.psi2?.timeoutMs ?? 60_000;
+  const full = ctx.config?.analysisScope === 'full';
   const changed = ctx.applyResult.filesChanged;
+  // analysisScope "full" (used by RealSystem.observe): scan every source file
+  const targets = (dir) => (full ? listSourceFiles(dir) : existingFiles(dir, changed));
   try {
-    const key = `psi2|semgrep|${ctx.stateKey}|${await hashRules(rules)}|${version}|${[...changed].sort().join(',')}`;
+    const key = `psi2|semgrep|${ctx.stateKey}|${await hashRules(rules)}|${version}|${full ? '*' : [...changed].sort().join(',')}`;
     const [after, baseline] = await Promise.all([
-      existingFiles(ctx.cloneDir, changed).then((files) => runSemgrep(ctx.cloneDir, files, { bin, rules, env: ctx.env, timeoutMs })),
+      targets(ctx.cloneDir).then((files) => runSemgrep(ctx.cloneDir, files, { bin, rules, env: ctx.env, timeoutMs })),
       cached(key, () => withBaselineClone(ctx, async ({ dir, env }) =>
-        runSemgrep(dir, await existingFiles(dir, changed), { bin, rules, env, timeoutMs }))),
+        runSemgrep(dir, await targets(dir), { bin, rules, env, timeoutMs }))),
     ]);
     const found = newFindings(after, baseline, parseRenames(ctx.diff ?? ''));
     return {
       version,
       unavailable: false,
-      scanned: changed.length,
+      scanned: full ? 'all' : changed.length,
       evidence: found.map((f) => ({
         kind: 'semgrep-finding',
         detail: `${f.path}:${f.line} ${f.message}`.trim(),
@@ -70,7 +76,7 @@ async function semgrepPart(ctx, sec) {
 }
 
 async function vulnPart(ctx, sec, providerName) {
-  if (!ctx.applyResult.touchesManifest) return { evidence: [], ran: false };
+  if (!ctx.applyResult.touchesManifest && ctx.config?.analysisScope !== 'full') return { evidence: [], ran: false };
   const provider = getProvider(providerName);
   const unavailable = (detail) => ({ unavailable: true, ran: true, evidence: [{ kind: 'vuln-provider-unavailable', detail, files: ['package.json'] }] });
   if (!provider) return unavailable(`unknown vuln provider "${providerName}"`);
@@ -117,7 +123,7 @@ export async function run(ctx) {
   const evidence = [...sg.evidence, ...vu.evidence];
   evidence.push({
     kind: 'summary',
-    detail: `static scan: ${sg.unavailable ? 'unavailable' : `${sg.scanned} changed file(s)`}; dependency scan: ${vu.ran ? providerName : 'skipped (no manifest change)'}`,
+    detail: `static scan: ${sg.unavailable ? 'unavailable' : `${sg.scanned} file(s)`}; dependency scan: ${vu.ran ? providerName : 'skipped (no manifest change)'}`,
     files: [],
   });
   const result = buildResult('psi2', evidence, {

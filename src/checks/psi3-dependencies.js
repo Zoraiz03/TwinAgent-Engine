@@ -13,6 +13,7 @@
  * Import problems are only considered inside the node set: changed files plus
  * everything reachable from them and everything depending on them. The baseline
  * is built once per target state and filtered to the same node set.
+ * config analysisScope "full" (ground-truth observation) analyzes every file.
  * In twin mode the graph facts come from T (baseline) and T' (after) instead
  * of parsing the filesystem twice; plain mode is kept as the ablation baseline.
  */
@@ -163,7 +164,7 @@ export async function run(ctx) {
   }
 
   const graph = twinMode ? ctx.twinPrime.toGraph() : await buildGraph(ctx.cloneDir);
-  const nodes = ctx.applyResult.touchesManifest
+  const nodes = ctx.applyResult.touchesManifest || ctx.config?.analysisScope === 'full'
     ? new Set([...graph.files, ...baseGraph.files])
     : nodeSet(graph, baseGraph, ctx.applyResult.filesChanged);
   evidence.push(...importEvidence(graph, baseGraph, nodes));
