@@ -1,7 +1,9 @@
 /**
- * Evaluation entry point: re-exports fault injection, baselines and metrics.
- * All placeholders for now.
+ * Evaluation layer: labeled fault injection, the inject/agent harness, run
+ * manifests, metrics, statistics and report writers.
  */
-export * as faultInjection from './fault-injection.js';
-export * as baselines from './baselines.js';
-export * as metrics from './metrics.js';
+export { generate, generateWithReport, CATEGORIES } from './fault-injection.js';
+export { runInjectEval, runAgentEval } from './harness.js';
+export { computeMetrics, readLog } from './metrics.js';
+export { summarize } from './summarize.js';
+export * as stats from './stats.js';
