@@ -1,0 +1,3 @@
+{
+  "probes": [{ "name": "cli smoke run", "cmd": "node", "args": ["src/cli.js"] }]
+}

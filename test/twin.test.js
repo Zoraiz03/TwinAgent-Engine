@@ -123,8 +123,8 @@ test('clone() is independent and JSON round-trips exactly', async () => {
 
 test('model: node kinds, edges and properties on the fixture', async () => {
   const t = await build(FIXTURE);
-  assert.deepEqual(t.stats().nodes, { config: 2, module: 4, service: 1, test: 3 });
-  assert.deepEqual(t.stats().edges, { contains: 4, imports: 5, tests: 3 });
+  assert.deepEqual(t.stats().nodes, { config: 2, module: 5, service: 1, test: 3 });
+  assert.deepEqual(t.stats().edges, { contains: 5, imports: 6, tests: 3 });
   const math = t.nodes.get('src/math.js');
   assert.equal(math.kind, 'module');
   assert.equal(math.loc, 3);
@@ -135,8 +135,8 @@ test('model: node kinds, edges and properties on the fixture', async () => {
 
 test('reverseReachable and testsAffectedBy', async () => {
   const t = await build(FIXTURE);
-  assert.deepEqual([...t.reverseReachable(['src/greet.js'])].sort(), ['src/index.js', 'test/app.test.js', 'test/greet.test.js']);
-  assert.deepEqual([...t.reverseReachable(['src/index.js'])].sort(), ['test/app.test.js']);
+  assert.deepEqual([...t.reverseReachable(['src/greet.js'])].sort(), ['src/cli.js', 'src/index.js', 'test/app.test.js', 'test/greet.test.js']);
+  assert.deepEqual([...t.reverseReachable(['src/index.js'])].sort(), ['src/cli.js', 'test/app.test.js']);
   assert.deepEqual([...t.testsAffectedBy(['src/format.js'])], ['test/app.test.js']);
   assert.deepEqual([...t.testsAffectedBy(['src/math.js'])], ['test/math.test.js']);
   assert.deepEqual([...t.testsAffectedBy(['test/greet.test.js'])], ['test/greet.test.js']);
