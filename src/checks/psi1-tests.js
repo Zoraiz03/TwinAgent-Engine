@@ -8,7 +8,7 @@
  * tests that fail are reported but do not fail psi1 on their own. If no tests
  * exist for the scope the result is passed + inconclusive.
  * In twin mode, runners without a native related mode (node:test, plain npm
- * test) run only the tests the twin says are affected (see twinSelection).
+ * test) run only the tests the twin says are affected (see selectTests).
  * Severity: regression in a test file that directly imports a changed module =
  * high, other regressions = medium, timeout = high.
  *
@@ -41,17 +41,30 @@ function baselineRun(ctx, files, testFiles, timeoutMs, scope) {
 }
 
 /**
- * Twin-based test selection for runners without a native related mode: tests
- * whose import closure (in T or T') contains a changed file. Falls back to the
- * full suite (undefined) when the diff touches anything that is not a code
- * node (manifests, config, data files), since imports cannot bound its impact.
+ * Test selection. Returns { testFiles, testSelection }:
+ *   "related": the runner's native related mode (jest/vitest), or twin
+ *     selection (tests whose import closure in T or T' contains a changed file);
+ *   "full-fallback": twin found no affected tests but the target has tests, so
+ *     the full suite runs (conservative; tests.noAffectedFallback = "full");
+ *   "full": scope "full", plain mode on a runner without a related mode, or a
+ *     diff touching non-code files (manifests, config, data) whose impact
+ *     imports cannot bound.
+ * Inconclusive is only possible when the target truly has no tests, or when
+ * tests.noAffectedFallback = "inconclusive".
  */
-function twinSelection(ctx, scope, changed) {
+function selectTests(ctx, scope, changed) {
   const { twin, twinPrime } = ctx;
-  if (scope !== 'related' || !twin || !twinPrime || ctx.adapter.supportsRelated?.(ctx.cloneDir)) return undefined;
-  if (ctx.applyResult.touchesManifest) return undefined;
-  if (!changed.every((f) => twin.specs.has(f) || twinPrime.specs.has(f))) return undefined;
-  return [...new Set([...twin.testsAffectedBy(changed), ...twinPrime.testsAffectedBy(changed)])].sort();
+  if (scope !== 'related') return { testFiles: undefined, testSelection: 'full' };
+  if (ctx.adapter.supportsRelated?.(ctx.cloneDir)) return { testFiles: undefined, testSelection: 'related' };
+  if (!twin || !twinPrime) return { testFiles: undefined, testSelection: 'full' };
+  if (ctx.applyResult.touchesManifest || !changed.every((f) => twin.specs.has(f) || twinPrime.specs.has(f))) {
+    return { testFiles: undefined, testSelection: 'full' };
+  }
+  const affected = [...new Set([...twin.testsAffectedBy(changed), ...twinPrime.testsAffectedBy(changed)])].sort();
+  if (affected.length) return { testFiles: affected, testSelection: 'related' };
+  const hasTests = [twin, twinPrime].some((t) => [...t.nodes.values()].some((n) => n.kind === 'test'));
+  if (!hasTests || ctx.config?.tests?.noAffectedFallback === 'inconclusive') return { testFiles: [], testSelection: 'related' };
+  return { testFiles: undefined, testSelection: 'full-fallback' };
 }
 
 /**
@@ -73,7 +86,7 @@ export async function run(ctx) {
   const timeoutMs = ctx.config?.tests?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const changed = ctx.applyResult.filesChanged;
   const files = scope === 'related' ? changed : undefined;
-  const testFiles = twinSelection(ctx, scope, changed);
+  const { testFiles, testSelection } = selectTests(ctx, scope, changed);
 
   const baseline = await baselineRun(ctx, files, testFiles, timeoutMs, scope);
   if (baseline.timedOut) {
@@ -86,7 +99,7 @@ export async function run(ctx) {
 
   if (baseline.tests.length === 0 && after.tests.length === 0) {
     const detail = testFiles ? 'no tests are affected by the changed files (twin selection)' : `no tests found for scope "${scope}"`;
-    return done([{ kind: 'no-tests-found', detail, files: [] }], { inconclusive: true });
+    return done([{ kind: 'no-tests-found', detail, files: [], data: { testSelection } }], { inconclusive: true });
   }
 
   const afterById = new Map(after.tests.map((t) => [t.id, t]));
@@ -133,7 +146,7 @@ export async function run(ctx) {
     kind: 'test-summary',
     detail: `${baseline.tests.length} baseline tests, ${after.tests.length} after, ${regressions.length} regressions`,
     files: [],
-    data: { baselineTests: baseline.tests, afterTests: after.tests, regressions, selection: testFiles ? { by: 'twin', testFiles } : { by: files ? 'runner' : 'full' } },
+    data: { baselineTests: baseline.tests, afterTests: after.tests, regressions, testSelection, ...(testFiles ? { testFiles } : {}) },
   });
   return done(evidence);
 }

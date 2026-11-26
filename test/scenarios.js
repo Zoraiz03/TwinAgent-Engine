@@ -55,7 +55,7 @@ export const psi1Scenarios = [
       assert.equal(r.classification, 'Safe');
       // twin selection runs only the test that reaches src/math.js
       assert.equal(summary(r).baselineTests.length, mode === 'twin' ? 1 : 3);
-      assert.equal(summary(r).selection.by, mode === 'twin' ? 'twin' : 'runner');
+      assert.equal(summary(r).testSelection, mode === 'twin' ? 'related' : 'full');
       assert.equal(summary(r).regressions.length, 0);
     },
   },
@@ -236,6 +236,44 @@ export const psi1Scenarios = [
       assert.equal(r.psi1.passed, kinds.length === 0);
     },
   })),
+  {
+    name: 'no affected tests but the target has tests: twin falls back to the full suite',
+    setup: async () => {
+      const target = await gitTarget();
+      return { target, diff: await makeDiff(target, { 'src/orphan.js': 'export const orphan = 1;\n' }) };
+    },
+    check: (r, mode) => {
+      assert.equal(r.psi1.passed, true);
+      assert.equal(r.psi1.inconclusive, false);
+      assert.equal(summary(r).testSelection, mode === 'twin' ? 'full-fallback' : 'full');
+      assert.equal(summary(r).afterTests.length, 3);
+    },
+  },
+  {
+    name: 'the full-suite fallback catches a break only a non-importing test can see',
+    setup: async () => {
+      // the CLI test spawns src/cli.js instead of importing it, so imports cannot link them
+      const cliTest = "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { execFileSync } from 'node:child_process';\n\ntest('cli prints 3', () => assert.equal(execFileSync(process.execPath, ['src/cli.js'], { encoding: 'utf8' }).trim(), '3'));\n";
+      const target = await gitTarget({ 'src/cli.js': 'console.log(1 + 2);\n', 'test/cli.test.js': cliTest });
+      return { target, diff: await makeDiff(target, { 'src/cli.js': 'console.log(1 + 3);\n' }) };
+    },
+    check: (r, mode) => {
+      assert.equal(r.psi1.passed, false);
+      assert.deepEqual(summary(r).regressions.map((x) => x.id), ['test/cli.test.js::cli prints 3']);
+      assert.equal(summary(r).testSelection, mode === 'twin' ? 'full-fallback' : 'full');
+    },
+  },
+  {
+    name: 'noAffectedFallback "inconclusive" skips the fallback (verdict still passes)',
+    setup: async () => {
+      const target = await gitTarget();
+      return { target, diff: await makeDiff(target, { 'src/orphan.js': 'export const orphan = 1;\n' }), config: { tests: { noAffectedFallback: 'inconclusive' } } };
+    },
+    check: (r, mode) => {
+      assert.equal(r.psi1.passed, true);
+      assert.equal(r.psi1.inconclusive, mode === 'twin');
+    },
+  },
   {
     name: 'skip-like calls outside test files are not tampering',
     setup: async () => {
