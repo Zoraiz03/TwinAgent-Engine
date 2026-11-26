@@ -12,3 +12,5 @@ node bin/twinagent.js simulate --target <path> --diff <file>
 `psi2` uses [Semgrep](https://semgrep.dev) (optional; without it the check reports `inconclusive`) with the local rules in `rules/semgrep/`, plus a pluggable dependency-advisory provider (`security.vulnProvider`: `npm-audit`, `osv-scanner`, or a frozen `fixture` file).
 
 By default the engine runs in `twin` mode: it builds a digital twin graph of the target once per state (`src/twin/`), forks it per simulation, and syncs it incrementally with the diff. Set `twin.enabled: false` for `plain` mode, the ablation baseline without the twin.
+
+The decision loop (`src/loop/`, paper Algorithm 1) drives an LLM agent (`src/agent/`): propose a diff, simulate it, commit Safe changes to a `RealSystem` working directory, observe ground truth there, and log predicted-vs-observed outcomes as JSONL (`eval.logPath`). `node scripts/live-smoke.js --yes` runs one task against a real provider (`TWINAGENT_PROVIDER`); it is not part of `npm test`.
