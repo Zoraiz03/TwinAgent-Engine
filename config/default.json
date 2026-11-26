@@ -21,7 +21,7 @@
     "psi4": { "enabled": true, "timeoutMs": 180000 }
   },
   "agent": { "contextBudgetChars": 24000, "reformulateMode": "report", "decompose": false },
-  "loop": { "maxRetries": 3 },
-  "eval": { "logPath": null },
+  "loop": { "mode": "twinagent", "maxRetries": 3, "persistState": false },
+  "eval": { "logPath": null, "bootstrapResamples": 10000, "pricing": { "inputPerMTok": 0, "outputPerMTok": 0 } },
   "llm": { "provider": "anthropic", "model": "claude-sonnet-5-5" }
 }

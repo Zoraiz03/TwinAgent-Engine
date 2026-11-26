@@ -35,7 +35,8 @@ export function parseImports(source) {
   }
 }
 
-function parseWithAcorn(source) {
+/** Parse JS with acorn (module, then script). Throws on a syntax error. */
+export function parseWithAcorn(source) {
   const opts = { ecmaVersion: 'latest', allowHashBang: true, allowReturnOutsideFunction: true };
   try {
     return acorn.parse(source, { ...opts, sourceType: 'module' });

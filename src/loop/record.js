@@ -36,6 +36,7 @@ export const ActionRecordSchema = z.object({
   taskId: z.string(),
   actionIndex: z.number().int().nonnegative(),
   action: z.string(),
+  mode: z.enum(['twinagent', 'direct', 'reactive', 'static']),
   attempts: z.array(AttemptSchema),
   finalStatus: z.enum(['Success', 'Escalated']),
   reason: z.string().nullable(),
@@ -50,6 +51,22 @@ export const ActionRecordSchema = z.object({
     telemetry: z.object({ matched: z.number(), unmatched: z.number() }),
   }).nullable(),
   calibration: z.object({ psi4: z.object({ predicted: z.unknown(), observed: z.unknown() }) }).nullable(),
+  /** A change from this action was applied to the real system at some point. */
+  executedOnReal: z.boolean(),
+  /** An observed violation followed some execution (even if later rolled back). */
+  harmfulExecuted: z.boolean(),
+  /** An observed violation remains in the final state. */
+  harmfulFinal: z.boolean(),
+  rollbacks: z.number().int().nonnegative(),
+  /** psi ids the last pre-execution prediction said were violated (null: no prediction). */
+  predictedViolations: z.array(z.string()).nullable(),
+  reformulateMode: z.enum(['report', 'blind']),
+  // ---- evaluation harness annotations (absent outside eval runs) ----
+  injection: z.object({ id: z.string(), category: z.string(), seed: z.number(), description: z.string(), psi4Pending: z.boolean() }).nullable().optional(),
+  labelByConstruction: z.array(z.string()).nullable().optional(),
+  labelObserved: z.array(z.string()).nullable().optional(),
+  labelAgreement: z.boolean().nullable().optional(),
+  evalTaskId: z.string().optional(),
   totalLatencyMs: z.number().nonnegative(),
   totalTokens: z.number().int().nonnegative(),
   promptVersion: z.string(),

@@ -104,3 +104,13 @@ export async function createClone(target, { tmpRoot = tmpdir(), gitTimeoutMs = 6
   }
   return { dir, root, kind, source, dirty, stateKey, dispose };
 }
+
+/**
+ * State key of a target without cloning it (same key the baselines and twin
+ * cache use): HEAD for a clean git repo, HEAD + tree hash if dirty, tree hash otherwise.
+ * @param {string} target
+ */
+export async function targetStateKey(target, { gitTimeoutMs = 60_000 } = {}) {
+  const source = await realpath(resolve(target));
+  return computeStateKey(source, await isGitToplevel(source, gitTimeoutMs), gitTimeoutMs);
+}

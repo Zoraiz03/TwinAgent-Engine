@@ -37,7 +37,8 @@ async function existingFiles(dir, files) {
   return out;
 }
 
-async function semgrepPart(ctx, sec) {
+/** Semgrep part of psi2 (also used by the static baseline engine). */
+export async function semgrepPart(ctx, sec) {
   const bin = sec.semgrepPath ?? 'semgrep';
   const version = await semgrepVersion(bin, ctx.env);
   if (!version) {
