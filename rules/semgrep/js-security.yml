@@ -1,0 +1,135 @@
+# Local rule pack for psi2. No registry fetches: everything here runs offline.
+# Severity ERROR -> high, WARNING -> medium in the consequence report.
+rules:
+  - id: twinagent.js.eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval() or new Function() runs dynamically built code; avoid it or restrict input to literals.
+    metadata: { cwe: ["CWE-95: Eval Injection"] }
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function(...)
+      - pattern-not: eval("...")
+
+  - id: twinagent.js.child-process-nonliteral
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: child_process command built from a non-literal; use execFile/spawn with an argument array and validated input.
+    metadata: { cwe: ["CWE-78: OS Command Injection"] }
+    patterns:
+      - pattern-either:
+          - pattern: exec($CMD, ...)
+          - pattern: execSync($CMD, ...)
+          - pattern: spawn($CMD, ...)
+          - pattern: spawnSync($CMD, ...)
+          - pattern: child_process.$F($CMD, ...)
+          - pattern: cp.$F($CMD, ...)
+      - metavariable-regex:
+          metavariable: $CMD
+          regex: "(?s)^([^\"'`].*|`.*\\$\\{.*)$"
+
+  - id: twinagent.js.hardcoded-secret
+    languages: [generic]
+    severity: ERROR
+    message: Hardcoded credential or API key; load secrets from the environment or a secret manager.
+    metadata: { cwe: ["CWE-798: Use of Hard-coded Credentials"] }
+    pattern-either:
+      - pattern-regex: (?i)\b[\w.-]*(api[_-]?key|secret|token|passwd|password|auth[_-]?key|private[_-]?key)\w*["']?\s*[:=]\s*["'][A-Za-z0-9_\-/+=.]{16,}["']
+      - pattern-regex: \bAKIA[0-9A-Z]{16}\b
+      - pattern-regex: \bgh[pousr]_[A-Za-z0-9]{36,}\b
+      - pattern-regex: \bsk-[A-Za-z0-9]{32,}\b
+      - pattern-regex: -----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----
+
+  - id: twinagent.js.sql-string-built
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: SQL built by string concatenation or interpolation; use parameterized queries.
+    metadata: { cwe: ["CWE-89: SQL Injection"] }
+    patterns:
+      - pattern-either:
+          - pattern: $DB.$M("..." + $X, ...)
+          - pattern: $DB.$M($X + "...", ...)
+          - pattern: $DB.$M(`...${$X}...`, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(query|execute|exec|raw|run|all|get|prepare|\$queryRawUnsafe|\$executeRawUnsafe)$
+
+  - id: twinagent.js.html-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Non-literal HTML written to the DOM; sanitize it or use text content.
+    metadata: { cwe: ["CWE-79: Cross-site Scripting"] }
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = $X
+          - pattern: $EL.outerHTML = $X
+          - pattern: $EL.insertAdjacentHTML($POS, $X)
+          - pattern: document.write($X)
+      - pattern-not: $EL.innerHTML = "..."
+      - pattern-not: $EL.outerHTML = "..."
+      - pattern-not: $EL.insertAdjacentHTML($POS, "...")
+      - pattern-not: document.write("...")
+
+  - id: twinagent.js.react-dangerous-html
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: dangerouslySetInnerHTML with a non-literal value; sanitize the HTML first.
+    metadata: { cwe: ["CWE-79: Cross-site Scripting"] }
+    patterns:
+      - pattern: '<$EL ... dangerouslySetInnerHTML={{__html: $X}} ... />'
+      - pattern-not: '<$EL ... dangerouslySetInnerHTML={{__html: "..."}} ... />'
+
+  - id: twinagent.js.weak-hash
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: MD5/SHA-1 are broken for security purposes; use SHA-256 or better (and a KDF for passwords).
+    metadata: { cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"] }
+    pattern-either:
+      - pattern: $C.createHash("md5")
+      - pattern: $C.createHash("sha1")
+      - pattern: createHash("md5")
+      - pattern: createHash("sha1")
+
+  - id: twinagent.js.insecure-random-token
+    languages: [generic]
+    severity: WARNING
+    message: Math.random() is not cryptographically secure; use crypto.randomBytes / crypto.randomUUID for tokens and secrets.
+    metadata: { cwe: ["CWE-338: Use of Cryptographically Weak PRNG"] }
+    pattern-regex: (?i)(token|secret|password|nonce|session|csrf|api[_-]?key|otp)\w*\s*[:=][^;\n]*Math\.random\(
+
+  - id: twinagent.js.tls-verification-disabled
+    languages: [generic]
+    severity: ERROR
+    message: TLS certificate verification is disabled.
+    metadata: { cwe: ["CWE-295: Improper Certificate Validation"] }
+    pattern-either:
+      - pattern-regex: rejectUnauthorized\s*:\s*false
+      - pattern-regex: NODE_TLS_REJECT_UNAUTHORIZED["'\]]*\s*[:=]\s*["']?0
+
+  - id: twinagent.js.fs-request-path
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Filesystem access with a request-derived path; resolve against a fixed root and reject '..' segments.
+    metadata: { cwe: ["CWE-22: Path Traversal"] }
+    patterns:
+      - pattern-either:
+          - pattern: $FS.$F(..., $REQ.$S.$P, ...)
+          - pattern: $FS.$F(..., $REQ.$S[...], ...)
+          - pattern: $FS.$F(..., path.join(..., $REQ.$S.$P, ...), ...)
+      - metavariable-regex: { metavariable: $FS, regex: ^(fs|fsp|promises|fs\.promises|res)$ }
+      - metavariable-regex: { metavariable: $F, regex: ^(readFile|readFileSync|writeFile|writeFileSync|createReadStream|createWriteStream|unlink|unlinkSync|readdir|readdirSync|rm|rmSync|appendFile|sendFile|download)$ }
+      - metavariable-regex: { metavariable: $REQ, regex: ^(req|request|ctx\.request)$ }
+      - metavariable-regex: { metavariable: $S, regex: ^(query|body|params|headers)$ }
+
+  - id: twinagent.js.open-redirect
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Redirect to a request-controlled URL; allow-list targets or only redirect to relative paths.
+    metadata: { cwe: ["CWE-601: Open Redirect"] }
+    patterns:
+      - pattern-either:
+          - pattern: $RES.redirect(..., $REQ.$S.$P, ...)
+          - pattern: $RES.redirect(..., $REQ.$S[...], ...)
+      - metavariable-regex: { metavariable: $REQ, regex: ^(req|request)$ }
+      - metavariable-regex: { metavariable: $S, regex: ^(query|body|params)$ }
