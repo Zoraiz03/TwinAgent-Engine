@@ -107,3 +107,57 @@ test('test subprocesses never see secrets from the parent environment', async ()
     delete process.env.TWIN_SECRET_TOKEN;
   }
 });
+
+// ---- skipped tests and test tampering ----
+const kinds = (r) => r.psi1.evidence.filter((e) => e.severity).map((e) => e.kind).sort();
+const mathTest = (body) => `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/math.js';\n\n${body}`;
+const TWO = mathTest("test('add', () => assert.equal(add(1, 2), 3));\ntest('add zero', () => assert.equal(add(0, 0), 0));\n");
+
+test('adding .skip to a passing test fails psi1 (tampering + skipped)', async () => {
+  const target = await makeTarget({ git: true });
+  const diff = await makeDiff(target, { 'test/math.test.js': mathTest("test.skip('add', () => assert.equal(add(1, 2), 3));\n") });
+  const report = await sim(target, diff);
+  assert.equal(report.psi1.passed, false);
+  assert.deepEqual(kinds(report), ['test-skipped', 'test-tampering']);
+  assert.equal(report.psi1.evidence.find((e) => e.kind === 'test-skipped').severity, 'medium');
+  assert.equal(report.psi1.evidence.find((e) => e.kind === 'test-tampering').severity, 'high');
+  assert.equal(report.classification, 'Abort');
+});
+
+test('deleting a test file fails psi1', async () => {
+  const target = await makeTarget({ git: true });
+  const report = await sim(target, await makeDiff(target, { 'test/greet.test.js': null }));
+  assert.equal(report.psi1.passed, false);
+  assert.match(report.psi1.evidence.find((e) => e.kind === 'test-tampering').detail, /test file deleted: test\/greet\.test\.js/);
+});
+
+test('removing one test() from a file fails psi1', async () => {
+  const target = await makeTarget({ git: true, files: { 'test/math.test.js': TWO } });
+  const one = mathTest("test('add', () => assert.equal(add(1, 2), 3));\n");
+  const report = await sim(target, await makeDiff(target, { 'test/math.test.js': one }));
+  assert.equal(report.psi1.passed, false);
+  assert.match(report.psi1.evidence.find((e) => e.kind === 'test-tampering').detail, /1 test case\(s\) removed/);
+});
+
+test('a test that was already skipped at baseline is not charged', async () => {
+  const target = await makeTarget({ git: true, files: { 'test/math.test.js': mathTest("test('add', () => assert.equal(add(1, 2), 3));\ntest.skip('later', () => {});\n") } });
+  const report = await sim(target, CLEAN_DIFF);
+  assert.equal(summary(report).baselineTests.some((t) => t.status === 'skip'), true);
+  assert.equal(report.psi1.passed, true);
+  assert.deepEqual(kinds(report), []);
+});
+
+test('with tamperingDetection off only runner-based evidence applies', async () => {
+  const target = await makeTarget({ git: true });
+  const diff = await makeDiff(target, { 'test/math.test.js': mathTest("test.skip('add', () => assert.equal(add(1, 2), 3));\n") });
+  const report = await sim(target, diff, { tests: { tamperingDetection: false } });
+  assert.deepEqual(kinds(report), ['test-skipped']);
+  const relaxed = await sim(target, diff, { tests: { tamperingDetection: false, skipIsRegression: false } });
+  assert.equal(relaxed.psi1.passed, true);
+});
+
+test('skipping tests that are outside test files is not tampering', async () => {
+  const target = await makeTarget({ git: true });
+  const diff = await makeDiff(target, { 'src/math.js': 'export function add(a, b) {\n  return [a].concat(b).skip?.(0) ?? a + b;\n}\n' });
+  assert.equal((await sim(target, diff)).psi1.evidence.some((e) => e.kind === 'test-tampering'), false);
+});

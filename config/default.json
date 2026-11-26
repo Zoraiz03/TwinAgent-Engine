@@ -3,7 +3,7 @@
   "K": 3,
   "install": { "timeoutMs": 300000, "ignoreScripts": true },
   "env": { "allow": [] },
-  "tests": { "scope": "related", "timeoutMs": 120000 },
+  "tests": { "scope": "related", "timeoutMs": 120000, "skipIsRegression": true, "tamperingDetection": true },
   "checks": {
     "psi1": { "enabled": true, "timeoutMs": 120000 },
     "psi2": { "enabled": true, "timeoutMs": 60000 },

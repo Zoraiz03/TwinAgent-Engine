@@ -9,8 +9,18 @@
  * exist for the scope the result is passed + inconclusive.
  * Severity: regression in a test file that directly imports a changed module =
  * high, other regressions = medium, timeout = high.
+ *
+ * Closing the "just disable the test" loophole:
+ *   - a test that passed at baseline and is skipped/todo after is a regression
+ *     (kind "test-skipped", medium) unless tests.skipIsRegression is false;
+ *     tests already skipped at baseline are not charged.
+ *   - test-tampering detection reads the diff itself (added .skip/xit/todo
+ *     markers, deleted test files, fewer test cases or assertions) and fails
+ *     psi1 as high even if the remaining tests pass. Disable with
+ *     tests.tamperingDetection = false.
  */
 import { cached, dropCached, withBaselineClone } from './baseline.js';
+import { detectTampering } from './diff-scan.js';
 import { fileImports } from './import-graph.js';
 import { buildResult } from './result.js';
 
@@ -32,8 +42,12 @@ function baselineRun(ctx, files, timeoutMs, scope) {
  */
 export async function run(ctx) {
   const start = performance.now();
-  const done = (evidence, extra = {}) =>
-    buildResult('psi1', evidence, { ...extra, durationMs: Math.round(performance.now() - start) });
+  const tampering = ctx.config?.tests?.tamperingDetection === false ? [] : detectTampering(ctx.diff ?? '');
+  const skipIsRegression = ctx.config?.tests?.skipIsRegression !== false;
+  const done = (evidence, { inconclusive = false } = {}) => {
+    const result = buildResult('psi1', [...tampering, ...evidence], { durationMs: Math.round(performance.now() - start) });
+    return { ...result, inconclusive: inconclusive && result.passed };
+  };
 
   const scope = ctx.config?.tests?.scope ?? 'related';
   const timeoutMs = ctx.config?.tests?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -71,11 +85,16 @@ export async function run(ctx) {
     if (t.status !== 'pass') continue; // pre-existing failures / skips are not charged
     const now = afterById.get(t.id);
     if (now?.status === 'pass') continue;
+    if (now?.status === 'skip') {
+      if (!skipIsRegression) continue;
+      regressions.push({ id: t.id, file: t.file, reason: 'skipped', severity: 'medium' });
+      evidence.push({ kind: 'test-skipped', detail: `${t.id} is skipped (passed at baseline)`, files: [t.file], severity: 'medium', data: { id: t.id } });
+      continue;
+    }
     let reason;
     if (now?.status === 'fail') reason = 'failed';
     else if (!now && after.timedOut) reason = 'timed-out';
-    else if (!now) reason = 'missing';
-    else continue; // now skipped: not a violation
+    else reason = 'missing';
     const severity = after.timedOut || (await isDirect(t.file)) ? 'high' : 'medium';
     regressions.push({ id: t.id, file: t.file, reason, severity });
     evidence.push({ kind: 'regression', detail: `${t.id} ${reason} (passed at baseline)`, files: [t.file], severity, data: { id: t.id, reason } });
