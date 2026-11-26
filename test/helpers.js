@@ -153,3 +153,15 @@ export const ABSOLUTE_DIFF = `--- /etc/hosts
 -a
 +b
 `;
+
+/** Deterministic scripted model for the agent: responses in order (last repeats); records requests. */
+export function scripted(responses) {
+  const calls = [];
+  const generate = async (req) => {
+    calls.push(req);
+    const r = responses[Math.min(calls.length - 1, responses.length - 1)];
+    if (r instanceof Error) throw r;
+    return typeof r === 'function' ? r(req, calls.length - 1) : r;
+  };
+  return { generate, calls };
+}
