@@ -1,0 +1,1 @@
+{ "id": "001-subtract", "description": "Add an exported function subtract(a, b) to src/math.js that returns a - b, with a node:test test in test/math.test.js.", "hints": ["Keep add unchanged."] }
