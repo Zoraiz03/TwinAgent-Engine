@@ -1,5 +1,7 @@
 /**
- * Static import graph of a JS/TS source tree (shared by psi1 and psi3).
+ * Shared source parsing for the twin graph and the checks (psi1, psi3): import
+ * extraction, specifier resolution, and a whole-tree import graph (used by the
+ * plain, twin-less mode).
  * Imports are read with acorn (ESM import/export-from, dynamic import() and
  * require() with string literals). Files acorn cannot parse (TypeScript, JSX)
  * fall back to a regex scan. Nothing is executed and nothing touches the
@@ -13,7 +15,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import * as acorn from 'acorn';
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'coverage']);
+export const SKIP_DIRS = new Set(['node_modules', '.git', 'coverage']);
 export const SOURCE_EXT = ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts'];
 const BUILTINS = new Set(builtinModules.map((m) => m.replace(/^node:/, '')));
 
@@ -96,21 +98,34 @@ async function exists(p) {
 }
 
 /**
- * Resolve a relative specifier from `fromFile` to a root-relative file, or null.
- * @param {string} root @param {string} fromFile @param {string} spec
+ * Candidate files for a relative specifier, in resolution order. Pure string
+ * work, so the twin can resolve against its file set and the filesystem
+ * resolver against the disk with identical results.
+ * @param {string} fromFile @param {string} spec @returns {string[]}
  */
-export async function resolveRelative(root, fromFile, spec) {
+export function candidates(fromFile, spec) {
   const base = posix.normalize(posix.join(posix.dirname(fromFile), spec));
   const stem = base.replace(/\.(m|c)?jsx?$/, ''); // TS style: './x.js' -> x.ts
-  const candidates = [
+  return [
     base,
     ...SOURCE_EXT.map((e) => base + e),
     ...SOURCE_EXT.map((e) => stem + e),
     ...SOURCE_EXT.map((e) => posix.join(base, `index${e}`)),
   ];
-  for (const c of candidates) if (await exists(join(root, c))) return c;
+}
+
+/**
+ * Resolve a relative specifier from `fromFile` to a root-relative file, or null.
+ * @param {string} root @param {string} fromFile @param {string} spec
+ */
+export async function resolveRelative(root, fromFile, spec) {
+  for (const c of candidates(fromFile, spec)) if (await exists(join(root, c))) return c;
   return null;
 }
+
+const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
+/** Test file by path convention (test/, tests/, __tests__/, *.test.*, *.spec.*). */
+export const isTestFile = (path) => TEST_FILE.test(path);
 
 /** @param {string} root @returns {Promise<string[]>} */
 export async function listSourceFiles(root) {
@@ -128,7 +143,7 @@ export async function listSourceFiles(root) {
 }
 
 /** Package names declared in package.json (plus the package itself). */
-async function declaredPackages(root) {
+export async function declaredPackages(root) {
   try {
     const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
     const names = new Set([pkg.name].filter(Boolean));
@@ -186,7 +201,7 @@ export async function buildGraph(root) {
         else unresolved.push({ file, specifier: spec });
       } else {
         const pkg = packageName(spec);
-        if (pkg && !declared.has(pkg)) undeclared.push({ file, pkg });
+        if (pkg && !declared.has(pkg) && !undeclared.some((u) => u.file === file && u.pkg === pkg)) undeclared.push({ file, pkg });
       }
     }
   }

@@ -1,6 +1,7 @@
 /**
  * Consequence simulation engine. Pipeline:
- *   clone (worktree or filtered copy) -> apply diff -> prepare (symlink or real
+ *   clone (worktree or filtered copy) -> [twin: load/build T] -> apply diff ->
+ *   [twin: T' = T.clone(), T'.applyChanges(changed files)] -> prepare (symlink or real
  *   install, based on whether the diff touched a manifest) -> run checks in
  *   parallel -> aggregate -> dispose.
  * Apply runs before prepare so that a manifest-changing diff is installed from
@@ -8,6 +9,8 @@
  * disposed in a finally block on success, failure, or thrown error.
  * A diff that fails to apply yields Revise; an unsafe diff yields Abort. In
  * both cases checks are skipped.
+ * config twin.enabled=false selects "plain" mode (no twin; the ablation
+ * baseline): checks then analyze the filesystem directly, as before the twin.
  */
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,6 +18,7 @@ import { pickAdapter, getAdapter } from '../adapters/index.js';
 import { checks as defaultChecks } from '../checks/index.js';
 import { applyDiff } from './apply.js';
 import { createClone } from './clone.js';
+import { loadTwin } from '../twin/cache.js';
 import { scrubbedEnv } from './env.js';
 import { CheckResultSchema, validateReport } from './schema.js';
 
@@ -72,23 +76,40 @@ export async function simulate({ target, diff, config, adapter, tmpRoot, checks 
   const start = performance.now();
   const cfg = mergeConfig(await loadConfig(), config);
   const ad = typeof adapter === 'object' ? adapter : adapter ? getAdapter(adapter) : pickAdapter(target);
-  const timings = { cloneMs: 0, installMs: 0, applyMs: 0, checks: {} };
+  const timings = { cloneMs: 0, installMs: 0, applyMs: 0, twinBuildMs: 0, twinSyncMs: 0, checks: {} };
+  const twinMode = cfg.twin?.enabled === false ? 'plain' : 'twin';
 
   let t = performance.now();
   const clone = await createClone(target, { tmpRoot });
   timings.cloneMs = ms(t);
   try {
+    // Twin mode: T for the unmodified target, built from the clone before the
+    // diff lands (identical tree to what the baselines see), cached per state.
+    let twin = null;
+    if (twinMode === 'twin') {
+      t = performance.now();
+      ({ twin } = await loadTwin({ stateKey: clone.stateKey, dir: clone.dir, adapter: ad, config: cfg }));
+      timings.twinBuildMs = ms(t);
+    }
+
     t = performance.now();
     const applyResult = await applyDiff(clone.dir, clone.kind, diff, { manifestFiles: ad.manifestFiles() });
     timings.applyMs = ms(t);
 
-    const base = { applyResult, cloneKind: clone.kind, dirtyTarget: clone.dirty, timings };
+    const base = { applyResult, cloneKind: clone.kind, dirtyTarget: clone.dirty, twinMode, timings };
     if (!applyResult.applied) {
       return validateReport({
         ...base,
         classification: applyResult.rejected ? 'Abort' : 'Revise',
         latencyMs: ms(start),
       });
+    }
+
+    // T' = clone(T), synced incrementally with the files the diff changed.
+    let twinPrime = null;
+    if (twin) {
+      twinPrime = twin.clone();
+      timings.twinSyncMs = (await twinPrime.applyChanges(clone.dir, applyResult.filesChanged)).syncMs;
     }
 
     const home = join(clone.root, 'home');
@@ -114,6 +135,8 @@ export async function simulate({ target, diff, config, adapter, tmpRoot, checks 
       diff,
       config: cfg,
       env,
+      twin,
+      twinPrime,
     };
     const settled = await Promise.allSettled(
       Object.entries(checks).map(async ([id, mod]) => {

@@ -3,7 +3,8 @@
   "K": 3,
   "install": { "timeoutMs": 300000, "ignoreScripts": true },
   "env": { "allow": [] },
-  "tests": { "scope": "related", "timeoutMs": 120000, "skipIsRegression": true, "tamperingDetection": true },
+  "tests": { "scope": "related", "timeoutMs": 120000, "skipIsRegression": true, "tamperingDetection": true, "assertionDropSeverity": "medium" },
+  "twin": { "enabled": true, "services": {}, "persistPath": null },
   "security": {
     "semgrepPath": "semgrep",
     "semgrepRules": [],

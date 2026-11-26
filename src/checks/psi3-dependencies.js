@@ -13,12 +13,14 @@
  * Import problems are only considered inside the node set: changed files plus
  * everything reachable from them and everything depending on them. The baseline
  * is built once per target state and filtered to the same node set.
+ * In twin mode the graph facts come from T (baseline) and T' (after) instead
+ * of parsing the filesystem twice; plain mode is kept as the ablation baseline.
  */
 import { readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { run as exec } from '../engine/exec.js';
 import { cached, withBaselineClone } from './baseline.js';
-import { buildGraph, findCycles, isSource, reach, reverseEdges } from './import-graph.js';
+import { buildGraph, findCycles, isSource, reach, reverseEdges } from '../twin/parse.js';
 import { buildResult } from './result.js';
 
 const REQUIRED_FIELDS = ['name', 'version'];
@@ -49,7 +51,7 @@ async function npmProblems(dir, env, roots, timeoutMs) {
   return problems;
 }
 
-/** Baseline: import-graph facts and npm ls problems of the unmodified target. */
+/** Baseline (plain mode): import-graph facts and npm ls problems of the unmodified target. */
 function baselineFor(ctx, timeoutMs) {
   return cached(`psi3|${ctx.stateKey}`, () =>
     withBaselineClone(ctx, async ({ dir, env, roots }) => {
@@ -57,6 +59,12 @@ function baselineFor(ctx, timeoutMs) {
       return { graph, npm: await npmProblems(dir, env, roots, timeoutMs) };
     }),
   );
+}
+
+/** Baseline npm ls problems only (twin mode: the graph comes from T). */
+function baselineNpm(ctx, timeoutMs) {
+  return cached(`psi3npm|${ctx.stateKey}`, () =>
+    withBaselineClone(ctx, ({ dir, env, roots }) => npmProblems(dir, env, roots, timeoutMs)));
 }
 
 async function readManifest(dir) {
@@ -132,22 +140,35 @@ export async function run(ctx) {
     evidence.push({ kind: 'install-failed', detail: `install (${ctx.install.strategy}) failed: ${ctx.install.error ?? 'unknown error'}`, files: ['package.json'], severity: 'high' });
   }
 
-  const baseline = await baselineFor(ctx, timeoutMs);
+  // Twin mode: baseline graph from T, after-state from T' (no second filesystem analysis).
+  const twinMode = Boolean(ctx.twin && ctx.twinPrime);
+  const needNpm = ctx.install.ok;
+  let baseGraph;
+  let baseNpm = new Set();
+  if (twinMode) {
+    baseGraph = ctx.twin.toGraph();
+    if (needNpm) baseNpm = await baselineNpm(ctx, timeoutMs);
+  } else {
+    const baseline = await baselineFor(ctx, timeoutMs);
+    baseGraph = baseline.graph;
+    baseNpm = baseline.npm;
+  }
 
-  if (ctx.install.ok) {
+  if (needNpm) {
     const roots = [ctx.cloneDir, ctx.targetPath];
     const after = await npmProblems(ctx.cloneDir, ctx.env, roots, timeoutMs);
     for (const p of after) {
-      if (!baseline.npm.has(p)) evidence.push({ kind: 'resolution-problem', detail: p, files: ['package.json'], severity: 'high' });
+      if (!baseNpm.has(p)) evidence.push({ kind: 'resolution-problem', detail: p, files: ['package.json'], severity: 'high' });
     }
   }
 
-  const graph = await buildGraph(ctx.cloneDir);
+  const graph = twinMode ? ctx.twinPrime.toGraph() : await buildGraph(ctx.cloneDir);
   const nodes = ctx.applyResult.touchesManifest
-    ? new Set([...graph.files, ...baseline.graph.files])
-    : nodeSet(graph, baseline.graph, ctx.applyResult.filesChanged);
-  evidence.push(...importEvidence(graph, baseline.graph, nodes));
+    ? new Set([...graph.files, ...baseGraph.files])
+    : nodeSet(graph, baseGraph, ctx.applyResult.filesChanged);
+  evidence.push(...importEvidence(graph, baseGraph, nodes));
+  const analyzed = [...nodes].filter((f) => graph.files.has(f) || baseGraph.files.has(f)).length;
 
-  evidence.push({ kind: 'summary', detail: `analyzed ${nodes.size} files in the import node set`, files: [] });
+  evidence.push({ kind: 'summary', detail: `analyzed ${analyzed} files in the import node set (${twinMode ? 'twin' : 'plain'} mode)`, files: [] });
   return buildResult('psi3', evidence, { durationMs: Math.round(performance.now() - start) });
 }

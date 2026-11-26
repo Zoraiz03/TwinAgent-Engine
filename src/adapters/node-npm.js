@@ -55,18 +55,28 @@ export const nodeNpmAdapter = {
 
   /**
    * Run the target's tests in `dir` and return machine-readable results.
+   * `testFiles` runs exactly those test files (twin-selected); `files` asks a
+   * runner with a native related mode for tests related to those files.
    * jest / vitest run through `npm exec` with JSON output (related-file
    * selection when `files` is given); node:test scripts get the junit reporter
    * injected; anything else runs `npm test` and is reported at file level from
    * the exit code. Timeouts kill the whole process tree.
    * @type {import('./index.js').TargetAdapter['runTests']}
    */
-  async runTests(dir, { files, timeoutMs, env } = {}) {
+  /** Whether the runner can select tests related to changed files by itself. */
+  supportsRelated(dir) {
+    const fw = nodeNpmAdapter.testCommand(dir)?.framework;
+    return fw === 'jest' || fw === 'vitest';
+  },
+
+  async runTests(dir, { files, testFiles, timeoutMs, env } = {}) {
     const empty = { ran: false, tests: [], exitCode: null, durationMs: 0, timedOut: false };
     const cmd = nodeNpmAdapter.testCommand(dir);
     if (!cmd) return empty;
     const start = performance.now();
     const related = files ? files.filter((f) => existsSync(join(dir, f))) : null;
+    const explicit = testFiles ? testFiles.filter((f) => existsSync(join(dir, f))) : null;
+    if (explicit && explicit.length === 0) return empty;
     const out = await mkdtemp(join(env?.HOME ?? tmpdir(), 'test-out-'));
     const outFile = join(out, 'report.json');
     const finish = (r, tests) => ({
@@ -80,14 +90,18 @@ export const nodeNpmAdapter = {
       if (cmd.framework === 'jest' || cmd.framework === 'vitest') {
         if (related && related.length === 0) return empty; // nothing related to select
         const args = cmd.framework === 'jest'
-          ? ['jest', '--json', `--outputFile=${outFile}`, '--ci', '--passWithNoTests', ...(related ? ['--findRelatedTests', ...related] : [])]
-          : ['vitest', ...(related ? ['related', ...related, '--run'] : ['run']), '--reporter=json', `--outputFile=${outFile}`, '--passWithNoTests'];
+          ? ['jest', '--json', `--outputFile=${outFile}`, '--ci', '--passWithNoTests',
+            ...(explicit ? ['--runTestsByPath', ...explicit] : related ? ['--findRelatedTests', ...related] : [])]
+          : ['vitest', ...(explicit ? ['run', ...explicit] : related ? ['related', ...related, '--run'] : ['run']),
+            '--reporter=json', `--outputFile=${outFile}`, '--passWithNoTests'];
         const r = await run('npm', ['exec', '--no-install', '--', ...args], { cwd: dir, env, timeoutMs });
         const text = await readFile(outFile, 'utf8').catch(() => '');
         return finish(r, text ? parseJestJson(text, dir) : []);
       }
       if (cmd.framework === 'node:test') {
-        const script = readPkg(dir).scripts.test.replace(/(\s)--test(?=\s|$)/, '$1--test --test-reporter=junit');
+        const script = explicit
+          ? `node --test --test-reporter=junit ${explicit.map((f) => `'${f.replace(/'/g, "'\\''")}'`).join(' ')}`
+          : readPkg(dir).scripts.test.replace(/(\s)--test(?=\s|$)/, '$1--test --test-reporter=junit');
         const path = `${join(dir, 'node_modules', '.bin')}:${env?.PATH ?? process.env.PATH}`;
         const r = await run('sh', ['-c', script], { cwd: dir, env: { ...env, PATH: path }, timeoutMs });
         return finish(r, parseJunit(r.stdout, dir));

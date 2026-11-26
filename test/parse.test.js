@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGraph, findCycles, packageName, parseImports, reach, reverseEdges, resolveRelative } from '../src/checks/import-graph.js';
+import { buildGraph, findCycles, packageName, parseImports, reach, reverseEdges, resolveRelative } from '../src/twin/parse.js';
 import { FIXTURE, makeTarget } from './helpers.js';
 
 test('parseImports reads ESM, CJS, dynamic and re-export specifiers', () => {

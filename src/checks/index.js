@@ -18,6 +18,8 @@ import * as psi4 from './psi4.js';
  * @property {string} [tmpRoot]  Where baseline clones are created.
  * @property {Record<string, string>} env  Scrubbed env for subprocesses.
  * @property {string} diff
+ * @property {import('../twin/twin.js').Twin|null} [twin]  T: twin of the unmodified target (twin mode; read-only).
+ * @property {import('../twin/twin.js').Twin|null} [twinPrime]  T': clone of T synced with the diff.
  * @property {object} config  Parsed config/default.json (or override).
  */
 

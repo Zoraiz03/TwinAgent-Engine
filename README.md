@@ -10,3 +10,5 @@ node bin/twinagent.js simulate --target <path> --diff <file>
 ```
 
 `psi2` uses [Semgrep](https://semgrep.dev) (optional; without it the check reports `inconclusive`) with the local rules in `rules/semgrep/`, plus a pluggable dependency-advisory provider (`security.vulnProvider`: `npm-audit`, `osv-scanner`, or a frozen `fixture` file).
+
+By default the engine runs in `twin` mode: it builds a digital twin graph of the target once per state (`src/twin/`), forks it per simulation, and syncs it incrementally with the diff. Set `twin.enabled: false` for `plain` mode, the ablation baseline without the twin.

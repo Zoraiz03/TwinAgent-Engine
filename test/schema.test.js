@@ -4,7 +4,7 @@ import { validateReport, CheckResultSchema } from '../src/engine/schema.js';
 
 const ok = (id) => ({ id, passed: true, severity: 'none', evidence: [], inconclusive: false });
 const applyResult = { applied: true, filesChanged: [], addedLines: 0, removedLines: 0, touchesManifest: false };
-const base = { applyResult, cloneKind: 'copy', dirtyTarget: false, classification: 'Safe', latencyMs: 1, timings: { cloneMs: 1, installMs: 0, applyMs: 1, checks: {} } };
+const base = { applyResult, cloneKind: 'copy', dirtyTarget: false, twinMode: 'plain', classification: 'Safe', latencyMs: 1, timings: { cloneMs: 1, installMs: 0, applyMs: 1, twinBuildMs: 0, twinSyncMs: 0, checks: {} } };
 const full = { ...base, psi1: ok('psi1'), psi2: ok('psi2'), psi3: ok('psi3'), psi4: ok('psi4') };
 
 test('schema accepts a valid report and rejects an invalid one', () => {

@@ -62,6 +62,10 @@ export const TimingsSchema = z.object({
   cloneMs: z.number().nonnegative(),
   installMs: z.number().nonnegative(),
   applyMs: z.number().nonnegative(),
+  /** Time to obtain T (build, disk load or cache hit); 0 in plain mode. */
+  twinBuildMs: z.number().nonnegative().default(0),
+  /** Time for T'.applyChanges(changed files); 0 in plain mode. */
+  twinSyncMs: z.number().nonnegative().default(0),
   /** Per-check wall time in ms, keyed by check id. */
   checks: z.record(z.string(), z.number().nonnegative()),
 });
@@ -79,6 +83,8 @@ export const ConsequenceReportSchema = z
     cloneKind: z.enum(['worktree', 'copy']),
     /** Git target had uncommitted changes, so a copy (not a worktree) was cloned. */
     dirtyTarget: z.boolean(),
+    /** "twin": checks use the digital twin; "plain": ablation baseline without it. */
+    twinMode: z.enum(['twin', 'plain']),
     classification: z.enum(CLASSIFICATIONS),
     timings: TimingsSchema,
     latencyMs: z.number().nonnegative(),

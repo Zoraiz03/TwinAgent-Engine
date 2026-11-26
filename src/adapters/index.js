@@ -12,8 +12,10 @@
  *                                Must not throw for an install failure: return ok:false.
  *   testCommand(cloneDir)     -> { cmd, args, cwd, framework? } | null   sync; null = no tests
  *   runTests(dir, opts)       -> Promise<TestRun>   runs the suite with machine-readable output.
- *                                opts = { files?, timeoutMs, env }; `files` = changed files for
- *                                related-test selection (runners without it run everything).
+ *                                opts = { files?, testFiles?, timeoutMs, env }; `files` = changed files for
+ *                                related-test selection (runners without it run everything);
+ *                                `testFiles` = run exactly these test files.
+ *   supportsRelated(dir)      -> boolean   runner has a native related-tests mode.
  *                                Never throws for failing tests or timeouts.
  *   manifestFiles()           -> string[]  dependency manifest/lockfile basenames; a diff
  *                                touching any of them forces a real install.
@@ -55,7 +57,8 @@ import { nodeNpmAdapter } from './node-npm.js';
  * @property {(targetPath: string) => boolean} detect
  * @property {(cloneDir: string, ctx: PrepareContext) => Promise<PrepareResult>} prepare
  * @property {(cloneDir: string) => ({cmd: string, args: string[], cwd: string, framework?: string|null})|null} testCommand
- * @property {(dir: string, opts?: {files?: string[], timeoutMs?: number, env?: Record<string, string>}) => Promise<TestRun>} runTests
+ * @property {(dir: string, opts?: {files?: string[], testFiles?: string[], timeoutMs?: number, env?: Record<string, string>}) => Promise<TestRun>} runTests
+ * @property {(dir: string) => boolean} supportsRelated
  * @property {() => string[]} manifestFiles
  */
 
