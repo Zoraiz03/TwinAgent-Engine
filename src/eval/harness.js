@@ -60,9 +60,9 @@ function injectedAgent(inj) {
 }
 
 /**
- * @param {{target: string, mode: string, n: number, seed: number, out: string, categories?: string[], config?: object, tmpRoot?: string}} opts
+ * @param {{target: string, mode: string, n: number, seed: number, out: string, categories?: string[], config?: object, tmpRoot?: string, beforeAction?: Function}} opts
  */
-export async function runInjectEval({ target, mode, n, seed, out, categories, config = {}, tmpRoot }) {
+export async function runInjectEval({ target, mode, n, seed, out, categories, config = {}, tmpRoot, beforeAction }) {
   const startedAt = new Date().toISOString();
   await mkdir(out, { recursive: true });
   const advisoryPath = join(out, 'advisories.json');
@@ -81,6 +81,7 @@ export async function runInjectEval({ target, mode, n, seed, out, categories, co
   const outcomes = [];
   for (const inj of injections) {
     if (!cfg.loop.persistState) await realSystem.restore(pristine);
+    if (beforeAction) await beforeAction(realSystem, inj);
     // oracle: what the real system shows when this exact diff is executed
     const snap = await realSystem.snapshot();
     const applied = await realSystem.apply(inj.diff, `oracle: ${inj.id}`);
