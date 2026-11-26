@@ -19,8 +19,12 @@ export async function installedPackages(dir) {
     out.get(name).add(version);
   };
   const lock = await readJson(join(dir, 'package-lock.json'));
-  for (const [path, info] of Object.entries(lock?.packages ?? {})) {
-    if (path.includes('node_modules/')) add(path.split('node_modules/').pop(), info.version);
+  const packages = lock?.packages ?? {};
+  for (const [path, info] of Object.entries(packages)) {
+    if (!path.includes('node_modules/')) continue;
+    // linked (file:/workspace) deps carry their version on the link target entry
+    const version = info.link ? packages[info.resolved]?.version : info.version;
+    add(path.split('node_modules/').pop(), version);
   }
   const walkV1 = (deps) => {
     for (const [name, info] of Object.entries(deps ?? {})) { add(name, info.version); walkV1(info.dependencies); }

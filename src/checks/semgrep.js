@@ -49,7 +49,7 @@ export async function hashRules(paths) {
 
 const normalize = (code) => code.replace(/\s+/g, ' ').trim();
 const fingerprint = (ruleId, path, code) =>
-  createHash('sha256').update(`${ruleId}\0${path}\0${normalize(code)}`).digest('hex').slice(0, 24);
+  createHash('sha256').update(`${ruleId}\0${path}\0${code}`).digest('hex').slice(0, 24);
 
 const SEVERITY = { ERROR: 'high', WARNING: 'medium' }; // anything else is informational
 
@@ -57,16 +57,15 @@ const SEVERITY = { ERROR: 'high', WARNING: 'medium' }; // anything else is infor
  * @typedef {object} Finding
  * @property {string} ruleId @property {string} path @property {string} message
  * @property {'high'|'medium'|undefined} severity @property {string} [cwe] @property {number} line
+ * @property {string} code  whitespace-normalized matched code
  */
 
 /**
- * Scan `files` (relative to `dir`) and return findings keyed by fingerprint.
- * Identical matches in one file share a key, so counts are tracked.
- * @returns {Promise<Map<string, Finding[]>>}
+ * Scan `files` (relative to `dir`).
+ * @returns {Promise<Finding[]>}
  */
 export async function runSemgrep(dir, files, { bin, rules, env, timeoutMs }) {
-  const out = new Map();
-  if (files.length === 0) return out;
+  if (files.length === 0) return [];
   const args = [
     '--json', '--metrics=off', '--disable-version-check', '--no-rewrite-rule-ids', '--no-git-ignore',
     ...rules.flatMap((r) => ['--config', r]),
@@ -85,6 +84,7 @@ export async function runSemgrep(dir, files, { bin, rules, env, timeoutMs }) {
     throw new Error(`semgrep failed: ${fatal[0].message ?? fatal[0].long_msg}`.slice(0, 300));
   }
   const buffers = new Map();
+  const out = [];
   for (const m of json.results ?? []) {
     const path = m.path.replace(/^\.\//, '');
     if (!buffers.has(path)) buffers.set(path, await readFile(join(dir, path)).catch(() => null));
@@ -92,30 +92,41 @@ export async function runSemgrep(dir, files, { bin, rules, env, timeoutMs }) {
     const code = buf && m.start.offset !== undefined
       ? buf.subarray(m.start.offset, m.end.offset).toString('utf8')
       : String(m.extra?.lines ?? '');
-    const cwe = [].concat(m.extra?.metadata?.cwe ?? [])[0];
-    const key = fingerprint(m.check_id, path, code);
-    if (!out.has(key)) out.set(key, []);
-    out.get(key).push({
+    out.push({
       ruleId: m.check_id,
       path,
       message: m.extra?.message ?? '',
       severity: SEVERITY[m.extra?.severity],
-      cwe,
+      cwe: [].concat(m.extra?.metadata?.cwe ?? [])[0],
       line: m.start.line,
+      code: normalize(code),
     });
   }
   return out;
 }
 
+/** Group findings by fingerprint, after mapping paths (old -> new) if given. */
+function byFingerprint(findings, pathMap = new Map()) {
+  const out = new Map();
+  for (const f of findings) {
+    const key = fingerprint(f.ruleId, pathMap.get(f.path) ?? f.path, f.code);
+    if (!out.has(key)) out.set(key, []);
+    out.get(key).push(f);
+  }
+  return out;
+}
+
 /**
- * Findings present after but beyond what the baseline had (per fingerprint count).
- * @param {Map<string, Finding[]>} after @param {Map<string, Finding[]>} baseline
+ * Findings present after the diff beyond what the baseline had (per
+ * fingerprint count). `renames` maps baseline paths to their new paths.
+ * @param {Finding[]} after @param {Finding[]} baseline @param {Map<string, string>} [renames]
  * @returns {Finding[]}
  */
-export function newFindings(after, baseline) {
+export function newFindings(after, baseline, renames) {
+  const base = byFingerprint(baseline, renames);
   const out = [];
-  for (const [key, items] of after) {
-    const extra = items.length - (baseline.get(key)?.length ?? 0);
+  for (const [key, items] of byFingerprint(after)) {
+    const extra = items.length - (base.get(key)?.length ?? 0);
     if (extra > 0) out.push(...items.slice(-extra));
   }
   return out;

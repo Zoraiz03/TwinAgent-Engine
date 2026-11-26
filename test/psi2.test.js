@@ -73,6 +73,15 @@ test('the shipped rules do not flag safe code', real, async () => {
   assert.equal(report.psi2.passed, true, JSON.stringify(report.psi2.evidence));
 });
 
+test('a pure rename of a file with a pre-existing finding is not new (real semgrep)', real, async () => {
+  const legacy = 'export function legacy(x) {\n  return eval(x);\n}\n';
+  const target = await makeTarget({ git: true, files: { 'src/legacy.js': legacy } });
+  const diff = await makeDiff(target, { 'src/legacy.js': null, 'src/renamed.js': legacy });
+  assert.match(diff, /rename from src\/legacy\.js/);
+  const report = await sim(target, diff);
+  assert.equal(report.psi2.passed, true, JSON.stringify(report.psi2.evidence));
+});
+
 // ---- semgrep missing / fake binary (always run) ----
 test('missing semgrep gives passed + inconclusive, never a crash', async () => {
   const report = await sim(await makeTarget({ git: true }), CLEAN_DIFF, { security: { semgrepPath: NO_SEMGREP } });
@@ -116,6 +125,12 @@ test('tool version is recorded and baseline/fingerprint logic works with a fake 
   assert.equal(moved.psi2.passed, true, JSON.stringify(moved.psi2.evidence));
   assert.equal(moved.psi2.inconclusive, false);
 
+  const renamed = await sim(target, await makeDiff(target, { 'src/legacy.js': null, 'src/moved/legacy.js': legacy }), config);
+  assert.equal(renamed.applyResult.applied, true);
+  assert.equal(renamed.psi2.passed, true, 'rename maps the baseline finding to the new path');
+  const copied = await sim(target, await makeDiff(target, { 'src/copy.js': legacy }), config);
+  assert.equal(copied.psi2.passed, false, 'a copy elsewhere is a new finding');
+
   const added = await sim(target, await makeDiff(target, { 'src/greet.js': withGreet('export const f = (u) => eval(u);\n') }), config);
   assert.equal(added.psi2.passed, false);
   assert.deepEqual(failing(added), [['semgrep-finding', 'high']]);
@@ -123,6 +138,8 @@ test('tool version is recorded and baseline/fingerprint logic works with a fake 
 });
 
 // ---- dependency advisories ----
+// Dependencies are local `file:` packages and the lockfile is regenerated
+// offline with the diff, so `npm ci` succeeds and psi2 is exercised alone.
 async function advisoryDb(advisories) {
   const path = join(await tmpBase(), 'advisories.json');
   await writeFile(path, JSON.stringify(advisories));
@@ -130,37 +147,49 @@ async function advisoryDb(advisories) {
 }
 const pkgJson = (deps, extra = {}) => JSON.stringify({ name: 'sample-app', version: '1.0.0', type: 'module', scripts: { test: 'node --test' }, ...extra, dependencies: deps }, null, 2) + '\n';
 const adv = (advisoryId, pkg, severity, version) => ({ advisoryId, package: pkg, severity, title: `${pkg} issue`, versions: [version] });
+const vendored = (name, version) => ({ [`vendor/${name}/package.json`]: JSON.stringify({ name, version }) + '\n' });
+const VENDOR = { ...vendored('old-lib', '2.0.0'), ...vendored('new-lib', '1.0.0'), ...vendored('mod-lib', '1.0.0'), ...vendored('low-lib', '1.0.0') };
+const dep = (name) => ({ [name]: `file:vendor/${name}` });
 
 test('fixture provider: a new advisory introduced by the diff fails; baseline advisories are not charged', async () => {
   const vulnFixture = await advisoryDb([adv('ADV-OLD', 'old-lib', 'high', '2.0.0'), adv('ADV-NEW', 'new-lib', 'critical', '1.0.0')]);
   const config = { security: { semgrepPath: NO_SEMGREP, vulnProvider: 'fixture', vulnFixture } };
-  const target = await makeTarget({ git: true, files: { 'package.json': pkgJson({ 'old-lib': '2.0.0' }) } });
+  const target = await makeTarget({ git: true, relock: true, files: { ...VENDOR, 'package.json': pkgJson(dep('old-lib')) } });
 
-  const report = await sim(target, await makeDiff(target, { 'package.json': pkgJson({ 'old-lib': '2.0.0', 'new-lib': '1.0.0' }) }), config);
+  const report = await sim(target, await makeDiff(target, { 'package.json': pkgJson({ ...dep('old-lib'), ...dep('new-lib') }) }, { relock: true }), config);
+  assert.equal(report.install.ok, true, report.install.error);
+  assert.equal(report.psi3.passed, true, JSON.stringify(report.psi3.evidence));
   assert.equal(report.psi2.passed, false);
   assert.deepEqual(report.psi2.evidence.filter((e) => e.advisoryId).map((e) => [e.advisoryId, e.severity]), [['ADV-NEW', 'high']]);
   assert.equal(report.psi2.tool.vulnProvider, 'fixture');
   assert.equal(report.classification, 'Abort');
 
-  const same = await sim(target, await makeDiff(target, { 'package.json': pkgJson({ 'old-lib': '2.0.0' }, { description: 'x' }) }), config);
+  const same = await sim(target, await makeDiff(target, { 'package.json': pkgJson(dep('old-lib'), { description: 'x' }) }, { relock: true }), config);
+  assert.equal(same.install.ok, true, same.install.error);
   assert.equal(same.psi2.passed, true, JSON.stringify(same.psi2.evidence));
   assert.equal(same.psi2.evidence.some((e) => e.advisoryId), false);
+  assert.equal(same.classification, 'Safe');
 });
 
 test('advisory severity mapping: moderate -> medium; low only fails with failOnLow', async () => {
-  const target = await makeTarget({ git: true });
-  const withDep = await makeDiff(target, { 'package.json': pkgJson({ 'mod-lib': '1.0.0', 'low-lib': '1.0.0' }) });
+  const target = await makeTarget({ git: true, relock: true, files: VENDOR });
+  const withDep = await makeDiff(target, { 'package.json': pkgJson({ ...dep('mod-lib'), ...dep('low-lib') }) }, { relock: true });
   const vulnFixture = await advisoryDb([adv('ADV-MOD', 'mod-lib', 'moderate', '1.0.0'), adv('ADV-LOW', 'low-lib', 'low', '1.0.0')]);
   const base = { semgrepPath: NO_SEMGREP, vulnProvider: 'fixture', vulnFixture };
 
   const r1 = await sim(target, withDep, { security: base });
+  assert.equal(r1.install.ok, true, r1.install.error);
   assert.deepEqual(r1.psi2.evidence.filter((e) => e.advisoryId).map((e) => [e.advisoryId, e.severity ?? null]), [['ADV-MOD', 'medium'], ['ADV-LOW', null]]);
-  assert.equal(r1.psi2.severity, 'medium'); // (overall classification is Abort here: psi3 flags the out-of-sync lockfile install)
+  assert.equal(r1.psi2.severity, 'medium');
+  assert.equal(r1.classification, 'Revise');
 
   const lowOnly = await advisoryDb([adv('ADV-LOW', 'low-lib', 'low', '1.0.0')]);
-  assert.equal((await sim(target, withDep, { security: { ...base, vulnFixture: lowOnly } })).psi2.passed, true);
+  const relaxed = await sim(target, withDep, { security: { ...base, vulnFixture: lowOnly } });
+  assert.equal(relaxed.psi2.passed, true);
+  assert.equal(relaxed.classification, 'Safe');
   const strict = await sim(target, withDep, { security: { ...base, vulnFixture: lowOnly, failOnLow: true } });
   assert.deepEqual(failing(strict), [['vulnerable-dependency', 'low']]);
+  assert.equal(strict.classification, 'Revise');
 });
 
 test('dependency scan only runs when a manifest changes', async () => {
@@ -178,6 +207,7 @@ test('an unavailable or unknown vuln provider is inconclusive', async () => {
     assert.equal(report.psi2.passed, true, security.vulnProvider);
     assert.equal(report.psi2.inconclusive, true);
     assert.equal(report.psi2.evidence.some((e) => e.kind === 'vuln-provider-unavailable'), true, security.vulnProvider);
+    assert.equal(report.classification, 'Safe');
   }
 });
 
@@ -190,8 +220,9 @@ const vulns = bad ? [{ id: 'GHSA-new', summary: 'bad', database_specific: { seve
 console.log(JSON.stringify({ results: [{ packages: [{ package: { name: 'new-lib', version: '1.0.0' }, vulnerabilities: vulns, groups: [] }] }] }));
 `);
   await chmod(bin, 0o755);
-  const target = await makeTarget({ git: true });
-  const diff = await makeDiff(target, { 'package.json': pkgJson({ 'new-lib': '1.0.0' }) });
+  const target = await makeTarget({ git: true, relock: true, files: VENDOR });
+  const diff = await makeDiff(target, { 'package.json': pkgJson(dep('new-lib')) }, { relock: true });
   const report = await sim(target, diff, { security: { semgrepPath: NO_SEMGREP, vulnProvider: 'osv-scanner', osvScannerPath: bin } });
+  assert.equal(report.classification, 'Abort');
   assert.deepEqual(report.psi2.evidence.filter((e) => e.advisoryId).map((e) => [e.advisoryId, e.severity]), [['GHSA-new', 'high']]);
 });

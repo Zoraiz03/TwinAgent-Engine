@@ -25,10 +25,16 @@ export async function tmpBase() {
  * Copy the fixture into a temp dir. Options: git (init + commit), nodeModules (fake dep).
  * @returns {Promise<string>} target path
  */
-export async function makeTarget({ git = false, nodeModules = false, files = {} } = {}) {
+/** Regenerate package-lock.json from package.json without network (file: deps only). */
+export function relock(dir) {
+  execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund', '--offline'], { cwd: dir, stdio: 'pipe' });
+}
+
+export async function makeTarget({ git = false, nodeModules = false, files = {}, relock: lock = false } = {}) {
   const dir = join(await tmpBase(), 'target');
   await cp(FIXTURE, dir, { recursive: true });
   await applyFiles(dir, files);
+  if (lock) relock(dir);
   if (nodeModules) {
     await mkdir(join(dir, 'node_modules/dep'), { recursive: true });
     await writeFile(join(dir, 'node_modules/dep/index.js'), 'export default 1;\n');
@@ -57,9 +63,10 @@ export async function applyFiles(dir, files) {
 
 /**
  * Build a real unified diff: copy the target to scratch, apply `files`
- * (string = write, null = delete), and ask git for the diff.
+ * (string = write, null = delete), and ask git for the diff (renames are
+ * detected, as with `git diff -M`). relock: regenerate package-lock.json.
  */
-export async function makeDiff(target, files) {
+export async function makeDiff(target, files, { relock: lock = false } = {}) {
   const scratch = join(await tmpBase(), 'scratch');
   await cp(target, scratch, { recursive: true, filter: (s) => !s.split('/').includes('node_modules') && !s.endsWith('/.git') });
   const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: scratch, encoding: 'utf8', stdio: 'pipe' });
@@ -67,6 +74,7 @@ export async function makeDiff(target, files) {
   g('add', '-A');
   g('commit', '-qm', 'base');
   await applyFiles(scratch, files);
+  if (lock) relock(scratch);
   g('add', '-A');
   return g('diff', '--cached', '--no-color');
 }

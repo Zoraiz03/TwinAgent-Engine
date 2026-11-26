@@ -7,7 +7,8 @@
  *     over the changed files after the diff vs the same files at baseline. A
  *     finding is new when its fingerprint (rule + path + normalized matched
  *     code, no line numbers) is not in the baseline. ERROR -> high, WARNING ->
- *     medium. Missing binary -> inconclusive "semgrep-unavailable".
+ *     medium. Renames from the diff map baseline paths to new paths first.
+ *     Missing binary -> inconclusive "semgrep-unavailable".
  *  2. Dependency advisories via a provider (security.vulnProvider: npm-audit |
  *     osv-scanner | fixture), only when the diff touches a manifest/lockfile.
  *     New advisories (id + package) fail: critical/high -> high, moderate ->
@@ -20,6 +21,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { cached, withBaselineClone } from './baseline.js';
+import { parseRenames } from './diff-scan.js';
 import { buildResult } from './result.js';
 import { DEFAULT_RULES, hashRules, newFindings, runSemgrep, semgrepVersion } from './semgrep.js';
 import { getProvider, ProviderUnavailableError } from './vuln-providers/index.js';
@@ -48,7 +50,7 @@ async function semgrepPart(ctx, sec) {
       cached(key, () => withBaselineClone(ctx, async ({ dir, env }) =>
         runSemgrep(dir, await existingFiles(dir, changed), { bin, rules, env, timeoutMs }))),
     ]);
-    const found = newFindings(after, baseline);
+    const found = newFindings(after, baseline, parseRenames(ctx.diff ?? ''));
     return {
       version,
       unavailable: false,
